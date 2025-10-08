@@ -1,9 +1,15 @@
 import streamlit as st
-import time
-# Set page configuration
-st.set_page_config(page_title="Language Helper", page_icon="🖐️", layout="centered")
+import os
+from PIL import Image
+import speech_recognition as sr
+from gtts import gTTS
+import tempfile
 
-# Custom CSS for colors and styles
+# ---------------- Page Config ----------------
+st.set_page_config(page_title="Language Helper", page_icon="🖐️", layout="centered")
+st.title("🖐️ Language Helper")
+
+# ---------------- Custom CSS ----------------
 st.markdown(
     """
     <style>
@@ -38,31 +44,73 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# Animated title
 st.markdown('<div class="title">Language Helper</div>', unsafe_allow_html=True)
 st.markdown("## Choose Mode", unsafe_allow_html=True)
 
-# Layout buttons in two columns
+# ---------------- Session States ----------------
+if 'constructed_text' not in st.session_state:
+    st.session_state.constructed_text = ""
+
+# ---------------- Columns for Mode Selection ----------------
 col1, col2 = st.columns(2)
 
+# ---------------- Audio → Sign ----------------
 with col1:
     if st.button("Audio to Sign", key="audio_to_sign"):
-        st.info("Processing Audio to Sign...")
+        st.info("🎤 Listening for audio...")
+        recognizer = sr.Recognizer()
         try:
-            run_audio_to_sign_main()
-            st.success("Audio to Sign conversion completed!")
-        except Exception as e:
-            st.error(f"Error: {e}")
+            with sr.Microphone() as source:
+                audio = recognizer.listen(source, timeout=5)
+                recognized_text = recognizer.recognize_google(audio)
+                st.success(f"✅ Recognized Text: {recognized_text}")
 
+                # Display sign images
+                st.subheader("Sign Representation")
+                words = recognized_text.strip().split()
+                for word in words:
+                    cols = st.columns(len(word))
+                    for i, char in enumerate(word):
+                        if char.isalnum():
+                            folder_path = os.path.join("Indian", char.upper())
+                            if os.path.isdir(folder_path):
+                                image_files = [f for f in os.listdir(folder_path) if f.endswith(".jpg")]
+                                if image_files:
+                                    img_path = os.path.join(folder_path, image_files[0])
+                                    img = Image.open(img_path).resize((120, 120))
+                                    cols[i].image(img, caption=char.upper())
+        except sr.WaitTimeoutError:
+            st.error("Listening timed out. Please try again.")
+        except sr.UnknownValueError:
+            st.error("Could not understand the audio.")
+        except sr.RequestError as e:
+            st.error(f"API Error: {e}")
+
+# ---------------- Sign → Audio ----------------
 with col2:
-    if st.button("Sign to Audio", key="sign_to_audio"):
-        st.info("Processing Sign to Audio...")
-        try:
-            run_sign_to_audio_main()
-            st.success("Sign to Audio conversion completed!")
-        except Exception as e:
-            st.error(f"Error: {e}")
+    st.subheader("Construct Text from Signs")
+    letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    cols_letters = st.columns(6)
+    for i, letter in enumerate(letters):
+        if cols_letters[i % 6].button(letter):
+            st.session_state.constructed_text += letter
 
-# Footer or extra info
+    st.text_area("Constructed Text", value=st.session_state.constructed_text, height=60)
+
+    if st.button("🔊 Speak Text"):
+        if st.session_state.constructed_text.strip():
+            tts = gTTS(st.session_state.constructed_text)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
+                tts.save(tmp_file.name)
+                st.audio(tmp_file.name, format="audio/mp3")
+            os.remove(tmp_file.name)
+        else:
+            st.warning("Please construct some text first!")
+
+    if st.button("❌ Clear Text"):
+        st.session_state.constructed_text = ""
+        st.experimental_rerun()
+
+# ---------------- Footer ----------------
 st.markdown("---")
 st.markdown("**Language Helper App** — Converts hand signs to audio and audio to hand signs")
