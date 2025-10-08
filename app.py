@@ -1,8 +1,5 @@
 import streamlit as st
 import time
-from finalsigntoaudio import run_sign_to_audio_main  # Import main function from your script
-from finalaudiotosign import run_audio_to_sign_main  # Import main function from your script
-
 # Set page configuration
 st.set_page_config(page_title="Language Helper", page_icon="🖐️", layout="centered")
 
