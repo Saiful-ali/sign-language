@@ -2,7 +2,7 @@ absl-py==2.2.2
 astunparse==1.6.3
 attrs==25.3.0
 Brotli==1.0.9
-certifi==2024.6.3
+certifi
 cffi==1.16.2
 charset-normalizer==3.3.0
 colorama==0.4.6
