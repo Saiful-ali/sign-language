@@ -11,18 +11,29 @@ from gtts import gTTS
 import tempfile
 import time
 
+# ---------------- Page Config ----------------
 st.set_page_config(page_title="Audio ↔ Sign Language Translator", layout="wide")
 st.title("🖐️ Audio ↔ Sign Language Translator (Web + Webcam)")
 
 # ---------------- Model Setup ----------------
 @st.cache_resource
 def load_models():
-    model = load_model("landmark_model.h5")
-    encoder = joblib.load("label_encoder.pkl")
-    return model, encoder
+    try:
+        base_dir = os.path.dirname(__file__)
+        model_path = os.path.join(base_dir, "landmark_model.h5")
+        encoder_path = os.path.join(base_dir, "label_encoder.pkl")
+        model = load_model(model_path)
+        encoder = joblib.load(encoder_path)
+        return model, encoder
+    except Exception as e:
+        st.error(f"Error loading model or encoder: {e}")
+        return None, None
 
 model, encoder = load_models()
+if model is None or encoder is None:
+    st.stop()  # Stop app if models not loaded
 
+# ---------------- Mediapipe Setup ----------------
 mp_hands = mp.solutions.hands
 hands_detector = mp_hands.Hands(static_image_mode=True, max_num_hands=2, min_detection_confidence=0.7)
 mp_draw = mp.solutions.drawing_utils
@@ -46,11 +57,11 @@ def extract_landmarks(image):
 def predict_sign(image):
     landmarks = extract_landmarks(image)
     if landmarks is None:
-        return None
-    pred = model.predict(landmarks)
-    label = encoder.inverse_transform([np.argmax(pred)])[0]
+        return None, None
+    pred = model.predict(landmarks, verbose=0)
     confidence = np.max(pred)
-    return label if confidence > 0.6 else None
+    label = encoder.inverse_transform([np.argmax(pred)])[0]
+    return (label, confidence) if confidence > 0.6 else (None, confidence)
 
 def display_sign_images(label):
     folder_path = os.path.join("sign_images", label)
@@ -58,6 +69,9 @@ def display_sign_images(label):
         st.warning(f"No folder found for label: {label}")
         return
     image_files = sorted([f for f in os.listdir(folder_path) if f.lower().endswith((".jpg",".png"))])
+    if not image_files:
+        st.warning(f"No images found for label: {label}")
+        return
     cols = st.columns(len(image_files))
     for i, img_file in enumerate(image_files):
         img_path = os.path.join(folder_path, img_file)
@@ -66,31 +80,31 @@ def display_sign_images(label):
 
 def text_to_speech(text):
     tts = gTTS(text)
-    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-    tts.save(tmp_file.name)
-    st.audio(tmp_file.name, format="audio/mp3")
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
+        tts.save(tmp_file.name)
+        st.audio(tmp_file.name, format="audio/mp3")
+    os.remove(tmp_file.name)
 
 # ---------------- Webcam Input ----------------
 st.header("📸 Live Webcam Sign Recognition")
-
 if 'last_label' not in st.session_state:
     st.session_state.last_label = ""
 
 cam_file = st.camera_input("Take a snapshot to detect hand signs")
-
 if cam_file:
     image = Image.open(cam_file).convert("RGB")
     st.image(image, caption="Captured Frame", use_column_width=True)
 
-    label = predict_sign(image)
+    label, confidence = predict_sign(image)
     if label:
-        st.success(f"✅ Recognized Sign: {label}")
+        st.success(f"✅ Recognized Sign: {label} (Confidence: {confidence*100:.1f}%)")
         st.session_state.last_label = label
         display_sign_images(label)
         if st.button("🔊 Speak Recognized Sign"):
             text_to_speech(label)
     else:
-        st.warning("Could not recognize the sign. Ensure hands are clearly visible.")
+        st.warning(f"Could not recognize the sign. Confidence: {confidence*100:.1f}%")
+        st.info("Ensure hands are clearly visible and inside the camera frame.")
 
 st.info("Tip: Take multiple snapshots to simulate live detection.")
 
@@ -104,7 +118,6 @@ cols = st.columns(6)
 for i, letter in enumerate(letters):
     if cols[i % 6].button(letter):
         st.session_state.constructed_text += letter
-        st.experimental_rerun()
 
 st.text_area("Constructed Text", value=st.session_state.constructed_text, height=60)
 if st.button("🔊 Speak Text"):
@@ -115,4 +128,3 @@ if st.button("🔊 Speak Text"):
 
 if st.button("❌ Clear Text"):
     st.session_state.constructed_text = ""
-    st.experimental_rerun()
